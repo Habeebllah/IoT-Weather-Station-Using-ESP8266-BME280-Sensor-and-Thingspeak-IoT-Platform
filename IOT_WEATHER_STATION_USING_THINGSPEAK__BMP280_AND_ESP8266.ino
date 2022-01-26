@@ -1,0 +1,151 @@
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+#include "ThingSpeak.h"
+#include <ESP8266WiFi.h>
+
+const char* ssid = "wesley";   // your network SSID (name) 
+const char* password = "wesley100";   // your network password
+
+WiFiClient  client;
+
+unsigned long myChannelNumber = 1573765;
+const char * myWriteAPIKey = "ZU5J02997PWS2M4N";
+
+// Timer variables
+unsigned long lastTime = 0;
+unsigned long timerDelay = 30000;
+
+// Variable to hold temperature readings
+float temperatureC;
+float pressure;
+float humidity;
+float altitude;
+
+#define SEALEVELPRESSURE_HPA (1013.25)
+
+Adafruit_BME280 bme; // I2C
+//Adafruit_BME280 bme(BME_CS); // hardware SPI
+//Adafruit_BME280 bme(BME_CS, BME_MOSI, BME_MISO, BME_SCK); // software SPI
+
+unsigned long delayTime;
+
+// set the LCD number of columns and rows
+int lcdColumns = 16;
+int lcdRows = 2;
+
+// set LCD address, number of columns and rows
+// if you don't know your display address, run an I2C scanner sketch
+LiquidCrystal_I2C lcd(0x27, lcdColumns, lcdRows);  
+
+void setup(){
+  Serial.begin(115200);  //Initialize serial
+  WiFi.mode(WIFI_STA);   
+  ThingSpeak.begin(client);  // Initialize ThingSpeak
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(2, 0);
+  lcd.print("IOT WEATHER");
+  lcd.setCursor(1, 1);      
+  lcd.print("MONITORING SYS");
+  delay(2000);
+  bool status;
+  status = bme.begin(0x76);  
+  if (!status) {
+    lcd.setCursor(0, 0);
+    lcd.println("BME280 Error!!!");
+    while (1);
+  }
+  
+  lcd.setCursor(0, 1);
+  lcd.print("-- Default Test --");
+  delayTime = 1000;
+
+}
+
+
+void printValues() {
+  lcd.clear();
+  lcd.setCursor(2, 0);
+  lcd.print("Temp: ");
+  lcd.print(bme.readTemperature());
+  lcd.print("*C");
+  
+  // Convert temperature to Fahrenheit
+  /*Serial.print("Temperature = ");
+  Serial.print(1.8 * bme.readTemperature() + 32);
+  Serial.println(" *F");*/
+  lcd.setCursor(0, 1);
+  lcd.print("Pres: ");
+  lcd.print(bme.readPressure() / 100.0F);
+  lcd.print(" hPa");
+  delay(2000);
+
+  lcd.clear();
+  lcd.setCursor(2, 0);
+  lcd.print("Alt: ");
+  lcd.print(bme.readAltitude(SEALEVELPRESSURE_HPA));
+  lcd.print("m");
+
+  lcd.setCursor(2, 1);
+  lcd.print("Hum: ");
+  lcd.print(bme.readHumidity());
+  lcd.print("%");
+
+  delay(2000);
+
+}
+
+void loop(){
+  if ((millis() - lastTime) > timerDelay) {
+    
+    // Connect or reconnect to WiFi
+    if(WiFi.status() != WL_CONNECTED){
+      Serial.print("Attempting to connect");
+      while(WiFi.status() != WL_CONNECTED){
+        WiFi.begin(ssid, password); 
+        delay(5000);     
+      } 
+      Serial.println("\nConnected.");
+    }
+
+    // Get a new temperature reading
+    temperatureC = bme.readTemperature();
+    pressure = bme.readPressure() / 100.0F;
+    humidity = bme.readHumidity();
+    altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
+    Serial.println(temperatureC);
+    Serial.println(pressure);
+    Serial.println(humidity);
+    Serial.println(altitude);
+
+    
+    //uncomment if you want to get temperature in Fahrenheit
+    /*temperatureF = 1.8 * bme.readTemperature() + 32;
+    Serial.print("Temperature (ºC): ");
+    Serial.println(temperatureF);*/
+    
+    ThingSpeak.setField(1, temperatureC);
+    ThingSpeak.setField(2, pressure);
+    ThingSpeak.setField(3, humidity);
+    ThingSpeak.setField(4, altitude);
+    // Write to ThingSpeak. There are up to 8 fields in a channel, allowing you to store up to 8 different
+    // pieces of information in a channel.  Here, we write to field 1.
+    int x = ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+
+    //uncomment if you want to get temperature in Fahrenheit
+    //int x = ThingSpeak.writeField(myChannelNumber, 1, temperatureF, myWriteAPIKey);
+
+    /*if(x == 200){
+      Serial.println("Channel update successful.");
+    }
+    else{
+      Serial.println("Problem updating channel. HTTP error code " + String(x));
+    }*/
+    lastTime = millis();
+  }
+
+  printValues();
+  delay(delayTime);
+}
